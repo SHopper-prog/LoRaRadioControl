@@ -1,12 +1,15 @@
 //
 //  Name:       slave.ino
-//  Date:       20 Feb 2021
+//  Date:       24 Feb 2021
 //  Brief:      Radio-control Slave device
 //  Author:     Simonn Hopper
 //
 // ***********************************************************************************************
 // Revisions:
 //  Date        rev.    who     what
+//  24/02/2021          SJH     Add the rest of the digital channel controls
+//  23/02/2021  vD      SJH     Add code to output some of the digital channels
+//                              Remove OLED display code as it takes up too much memory
 //  20/02/2021          SJH     Add code to read hex DIL switch to define RF channel
 //                              Add I2C address definitions, even though currently default
 //  13/02/2021  vC      SJH     Move PWM calibratiion to seperate function
@@ -19,7 +22,8 @@
 //
 // ***********************************************************************************************
 //
-// This expects a sereies of message packets containing servo postion data plus 8 bits of ON/OFF data.
+// This expects a series of message packets containing message header, servo postion data plus 8 bits of ON/OFF data.
+// Currently the message header is always 0x5A (MSG_CMND), but could be expanded e.g. to send fail-safe settings.
 // In response a 2-byte message is returned, comrising an 'ACK' plus 8-bits of status data
 //
 // Uses LoRa mode as I can't get FSK to work.
@@ -41,6 +45,14 @@
 #include <Wire.h>
 #include <Adafruit_PWMServoDriver.h>
 
+// includes for SSD1306 OLED driver
+// #include <SPI.h>
+// #include <Wire.h>
+// #include <Adafruit_GFX.h>
+// #include <Adafruit_SSD1306.h>
+
+
+
 // SX1278 has the following connections with the Arduino pro-mini:
 // NSS pin:   10
 // DIO0 pin:  3
@@ -51,18 +63,18 @@ SX1278 radio = new Module(10, 3, 9, 5);
 // called this way, it uses the default address 0x40
 Adafruit_PWMServoDriver pwm = Adafruit_PWMServoDriver(I2C_PWM_ADDR);
 
-uint8_t LED1 = 8;
-uint8_t HSW1 = 4;       // hex switch bit 1
-uint8_t HSW2 = A3;      // hex switch bit 2
-uint8_t HSW4 = A2;      // hex switch bit 4
-uint8_t HSW8 = A1;      // hex switch bit 8
+uint8_t LED1 = 8;         // LED 1
+uint8_t HSW1 = 4;         // hex switch bit 1
+uint8_t HSW2 = A3;        // hex switch bit 2
+uint8_t HSW4 = A2;        // hex switch bit 4
+uint8_t HSW8 = A1;        // hex switch bit 8
 
 uint8_t hexSwitch;         // hex switch value read
 
 // this is the RF channel number
 int rfChannel = RF_CH_DEF;
 
-// start & finish times used to calulate the loop time if required
+// start & finish times used to calculate the loop time if required
 // note that since 32-bits would equal 4,294,967,296 usec (4,294 secs) there is a chance that these could roll-over
 // and cause timeout hang-ups.
 //
@@ -107,6 +119,16 @@ uint16_t totalCounter;                              // PWM calibration cycle cou
 
 int16_t txCount;                                    //
 int8_t displayTask;                                   //
+
+
+// #define SCREEN_WIDTH 128          // OLED display width, in pixels
+// #define SCREEN_HEIGHT 32          // OLED display height, in pixels
+
+// #define OLED_RESET     -1         // Reset pin # (or -1 if sharing Arduino reset pin)
+// #define SCREEN_ADDRESS 0x3C       ///< See datasheet for Address; 0x3D for 128x64, 0x3C for 128x32
+// Adafruit_SSD1306 display(SCREEN_WIDTH, SCREEN_HEIGHT, &Wire, OLED_RESET);
+
+
 //
 //
 //
@@ -180,6 +202,48 @@ void setup() {
     failSafe[servoNum] = 128;
   }
   Serial.println(F(" success!"));
+
+  // initialise OLED display
+  //
+//  Serial.println(F("setting up OLED display"));
+//  // SSD1306_SWITCHCAPVCC = generate display voltage from 3.3V internally
+//  if(!display.begin(SSD1306_SWITCHCAPVCC, SCREEN_ADDRESS)) {
+//    Serial.println(F("SSD1306 allocation failed"));
+//    for(;;); // Don't proceed, loop forever
+//  }
+//
+  //
+  // Show initial display buffer contents on the screen --
+  // the library initializes this with an Adafruit splash screen.
+//  display.display();
+//  delay(2000); // Pause for 2 seconds
+//
+//  // Draw a single pixel in white
+//  display.drawPixel(10, 10, SSD1306_WHITE);
+
+  // Show the display buffer on the screen. You MUST call display() after
+  // drawing commands to make them visible on screen!
+//  display.display();
+//  delay(2000);
+
+//  testdrawchar();      // Draw characters of the default font
+//
+//  testdrawstyles();    // Draw 'stylized' characters
+//
+//  testscrolltext();    // Draw scrolling text
+//
+//  testdrawbitmap();    // Draw a small bitmap image
+//
+  // Invert and restore display, pausing in-between
+//  display.invertDisplay(true);
+//  delay(1000);
+//  display.invertDisplay(false);
+//  delay(1000);
+//
+//  testanimate(logo_bmp, LOGO_WIDTH, LOGO_HEIGHT); // Animate bitmaps
+
+
+
   
   //
   // initialize SX1278 with default settings
@@ -301,6 +365,17 @@ void loop() {
         pwm.setPWM(servoNum,pulseStart,pulseStop);
       }
 
+//        display.clearDisplay();          
+//        display.setTextSize(2);                       // biger 2:1 pixel scale
+//        display.setTextColor(SSD1306_WHITE);          // Draw white text
+//        display.setCursor(0, 0);                      // Start at top-left corner
+//        display.cp437(true);                          // Use full 256 char 'Code Page 437' font
+//
+//        display.write("Rx Timeout");
+//
+//        display.display();
+
+
       //
       // set status error bit?
       //
@@ -385,6 +460,18 @@ void loop() {
             Serial.print(F("[Slave] RSSI:\t\t"));
             Serial.print(radio.getRSSI());
             Serial.println(F(" dBm"));
+
+//            display.clearDisplay();          
+//            display.setTextSize(1);                       // Normal 1:1 pixel scale
+//            display.setTextColor(SSD1306_WHITE);          // Draw white text
+//            display.setCursor(0, 0);                      // Start at top-left corner
+//            display.cp437(true);                          // Use full 256 char 'Code Page 437' font
+//
+//            display.write("RSSI: ");
+//            display.write("dBm");
+//
+//            display.display();
+            
             displayTask = 2;
             break;
 
@@ -393,6 +480,18 @@ void loop() {
             Serial.print(F("[Slave] SNR:\t\t"));
             Serial.print(radio.getSNR());
             Serial.println(F(" dB"));
+
+//            display.clearDisplay();          
+//            display.setTextSize(1);                       // Normal 1:1 pixel scale
+//            display.setTextColor(SSD1306_WHITE);          // Draw white text
+//            display.setCursor(0, 0);                      // Start at top-left corner
+//            display.cp437(true);                          // Use full 256 char 'Code Page 437' font
+//
+//            display.write("SNR: ");
+//            display.write("dB");
+//
+//            display.display();
+
             displayTask = 3;
             break;
 
@@ -401,6 +500,18 @@ void loop() {
             Serial.print(F("[Slave] Frequency error:\t"));
             Serial.print(radio.getFrequencyError());
             Serial.println(F(" Hz"));
+
+//            display.clearDisplay();          
+//            display.setTextSize(1);                       // Normal 1:1 pixel scale
+//            display.setTextColor(SSD1306_WHITE);          // Draw white text
+//            display.setCursor(0, 0);                      // Start at top-left corner
+//            display.cp437(true);                          // Use full 256 char 'Code Page 437' font
+//
+//            display.write("Frequnecy error: ");
+//            display.write("Hz");
+//
+//            display.display();
+
             displayTask = 0;
             break;
 
@@ -426,7 +537,7 @@ void loop() {
         }
         //
         // copy on/off channel message here
-
+        swByte = msgArr[NUM_ANA_CHAN +1];                        // digital switch data
         
       }
 
@@ -463,7 +574,66 @@ void loop() {
 
       //
       // do on/off channels here
-      //
+      // Not very sophisticated but efficient code
+      // bit 0
+      if (swByte & 0x01){
+        // turn ON
+        pwm.setPWM(8,4096,0);                 // fully on
+      }
+      else {
+        // turn OFF
+        pwm.setPWM(8,0,4096);                 // fully off
+      }
+      // bit 1
+      if (swByte & 0x02){
+        pwm.setPWM(9,4096,0);                 // fully on
+      }
+      else {
+        pwm.setPWM(9,0,4096);                 // fully off
+      }
+      // bit 2
+      if (swByte & 0x04){
+        pwm.setPWM(10,4096,0);                 // fully on
+      }
+      else {
+        pwm.setPWM(10,0,4096);                 // fully off
+      }
+      // bit 3
+      if (swByte & 0x08){
+        pwm.setPWM(11,4096,0);                 // fully on
+      }
+      else {
+        pwm.setPWM(11,0,4096);                 // fully off
+      }
+      // bit 4
+      if (swByte & 0x10){
+        pwm.setPWM(12,4096,0);                 // fully on
+      }
+      else {
+        pwm.setPWM(12,0,4096);                 // fully off
+      }
+      // bit 5
+      if (swByte & 0x20){
+        pwm.setPWM(13,4096,0);                 // fully on
+      }
+      else {
+        pwm.setPWM(13,0,4096);                 // fully off
+      }
+      // bit 6
+      if (swByte & 0x40){
+        pwm.setPWM(14,4096,0);                 // fully on
+      }
+      else {
+        pwm.setPWM(14,0,4096);                 // fully off
+      }
+      // bit 7
+      if (swByte & 0x80){
+        pwm.setPWM(15,4096,0);                 // fully on
+      }
+      else {
+        pwm.setPWM(15,0,4096);                 // fully off
+      }
+
 
       //
       // clear status error bits?
