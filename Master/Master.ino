@@ -1,12 +1,16 @@
 
 //  Name:       master.ino
-//  Date:       20 Feb 2021
+//  Date:       24 Feb 2021
 //  Brief:      Radio-control Master device
 //  Author:     Simonn Hopper
 //
 // ***********************************************************************************************
 // Revisions:
 //  Date        rev,    who     what
+//  24/02/2021          SJH     Add trim facility to joystick channels 0 & 1
+//                              Change LED1 to flash when a trim increment/decrement is seen.
+//  23/02/2021  vD      SJH     Add code to read MCP23017 IO expander to read 16-bits switch data, bank A is used
+//                              as the data sent to the slave unit, bank B not currently used.
 //  20/02/2021  vC      SJH     Add code to read hex DIL switch to define RF channel
 //                              Add revision as a string constant
 //                              Add I2C address definitions, even though currently default
@@ -27,6 +31,8 @@
 //
 // It uses adafruit libraries for the ADS1015 4 channel analogue input module
 //
+// As the MCP23017 is simple no libraries are used to control, simply in-line type code only
+//
 // ***********************************************************************************************
 //
 
@@ -38,6 +44,7 @@
 // include the libraries for ADS1015 ADC module
 #include <Wire.h>
 #include <Adafruit_ADS1015.h>
+
 
 // SX1278 has the following connections with the Arduino pro-mini:
 // NSS pin:   10
@@ -75,7 +82,8 @@ uint32_t txStart,txFinish,rxStart,rxFinish;
 uint16_t servoArr[NUM_ANA_CHAN] = {SERVO_DEF,SERVO_DEF,SERVO_DEF,SERVO_DEF,SERVO_DEF,SERVO_DEF};
 
 // byte used to store 8 x on/off channels, set to OFF as the default
-byte swByte =0b00000000;
+byte swByteA =0b00000000;                         // bank A inputs
+byte swByteB =0b00000000;                         // bank B inputs
 
 // byte array used to store messages
 // this is formed from:
@@ -90,7 +98,7 @@ bool rxMsgOk = false;                             // received valid message flag
 
 // variables for joystick inputs
 int16_t vmeas;
-int16_t offset[NUM_ANA_CHAN] = {0,0,0,0,0,0};                  // offset values
+int16_t offset[NUM_ANA_CHAN] = {0,0,0,0,0,0};       // offset values
 
 int16_t txCount;                                    // counts Tx/Rx cycles
 int8_t  displayTask;                                // display task
@@ -140,6 +148,36 @@ void setup() {
   Serial.println(F("Initialising A-to-D converters..."));
   ads1015.begin();
 
+  // setup MCP23017
+  Serial.println(F("Initialising IO expander..."));
+   Wire.begin(); // wake up I2C bus
+  // set I/O pins to inputs
+  Wire.beginTransmission(I2C_DIO_ADDR);                     // I2C address
+  Wire.write(0x00);                                         // IODIRA register
+  Wire.write(0xFF);                                         // set all of port A to inputs (default)
+  Wire.endTransmission();
+  Wire.beginTransmission(I2C_DIO_ADDR);                     // I2C address
+  Wire.write(0x01);                                         // IODIRB register
+  Wire.write(0xFF);                                         // set all of port A to inputs (default)
+  Wire.endTransmission();
+  // invert polarity of all inputs so that a switch 'closed' = 1
+  Wire.beginTransmission(I2C_DIO_ADDR);                     // I2C address
+  Wire.write(0x02);                                         // IOPOLA register
+  Wire.write(0xFF);                                         // set all of port A to inverted
+  Wire.endTransmission();
+  Wire.beginTransmission(I2C_DIO_ADDR);                     // I2C address
+  Wire.write(0x03);                                         // IOPOLBB register
+  Wire.write(0xFF);                                         // set all of port A to inverted
+  Wire.endTransmission();
+  // enable all internal pull-ups
+  Wire.beginTransmission(I2C_DIO_ADDR);                     // I2C address
+  Wire.write(0x0C);                                         // GPPUA register
+  Wire.write(0xFF);                                         // set all of port A to pull-ups enabled
+  Wire.endTransmission();
+  Wire.beginTransmission(I2C_DIO_ADDR);                     // I2C address
+  Wire.write(0x0D);                                         // GPPUB register
+  Wire.write(0xFF);                                         // set all of port A to pull-ups enabled
+  Wire.endTransmission();
   
   //
   // initialize SX1278 with required settings
@@ -180,7 +218,7 @@ void setup() {
     servoArr[i] = SERVO_DEF;
     msgArr[i+1] = servoArr[i];
   }
-  msgArr[NUM_ANA_CHAN+1] = swByte;
+  msgArr[NUM_ANA_CHAN+1] = swByteA;
 
   txStart = micros();                                     // capture start time
   txTimeout = false;                                      // clear Tx timeout flag
@@ -321,12 +359,56 @@ void loop() {
       state = radio.readData(msgArr, LEN_ACKMSG);
       if (state == ERR_NONE) {
         // packet was successfully received
-        rxMsgOk = true;                               // set Rx messag OK flag
+        rxMsgOk = true;                               // set Rx message OK flag
 //        Serial.println(F("[Master] Received packet!"));
         //
         // only display data every so many Tx/Rx cycles
         if (txCount > NUM_CYCLES) {
           txCount = 0;                                  // reset
+
+          // this is the place to check swByteB inputs to act on them, as it only happens every so many cycles
+          // e.g. check for a trim inputs being '1' and increment/decrement the servo offset data.
+
+          digitalWrite(LED1,LOW);                       // set LED OFF
+
+          
+          // joystick channel 0 trim
+          // bit 0 increments, bit 1 decrements, if both set then no change
+          if (swByteB & 0x01){
+            // bit set
+            offset[0] = offset[0] +1;
+            digitalWrite(LED1,HIGH);                   // set LED ON
+            Serial.println(F("Joystick 0 offset incremented"));
+          }
+          if (swByteB & 0x02){
+            // bit set
+            offset[0] = offset[0] -1;
+            digitalWrite(LED1,HIGH);                   // set LED ON
+            Serial.println(F("Joystick 0 offset decremented"));
+          }
+
+          // joystick channel 1 trim
+          // bit 2 increments, bit 3 decrements, if both set then no change
+          if (swByteB & 0x04){
+            // bit set
+            offset[1] = offset[1] +1;
+            digitalWrite(LED1,HIGH);                   // set LED ON
+            Serial.println(F("Joystick 1 offset incremented"));
+          }
+          if (swByteB & 0x08){
+            // bit set
+            offset[1] = offset[1] -1;
+            digitalWrite(LED1,HIGH);                   // set LED ON
+            Serial.println(F("Joystick 1 offset decremented"));
+          }
+
+
+          // display digital inputs
+          Serial.print(F("Digital inputs: "));
+          Serial.print(swByteA,HEX);
+          Serial.print(F(" "));
+          Serial.println(swByteB,HEX);
+          
           // get various parameters of the received packet
           // 
           switch(displayTask) {
@@ -338,6 +420,7 @@ void loop() {
                 Serial.print(F(" "));
               }
               Serial.println();
+
               displayTask = 1;                        // next display task
               break;
 
@@ -419,6 +502,22 @@ void loop() {
     // read digital switch inputs here
     //
 
+    // read the inputs of bank A; these are the digial channels controls
+    Wire.beginTransmission(I2C_DIO_ADDR);
+    Wire.write(0x12);                                 // bank A 
+    Wire.endTransmission();
+    Wire.requestFrom(int(I2C_DIO_ADDR), 1);
+    swByteA = Wire.read();
+
+    // read the inputs of bank B; these could be used for other tasks, e.g. as a trim input for some of the joystick channels
+    Wire.beginTransmission(I2C_DIO_ADDR);
+    Wire.write(0x13);                                 // bank B
+    Wire.endTransmission();
+    Wire.requestFrom(int(I2C_DIO_ADDR), 1);
+    swByteB = Wire.read();
+
+
+
     //
     // read joystick analogue inputs
     //
@@ -488,9 +587,7 @@ void loop() {
     for (int i =0; i< NUM_ANA_CHAN; i++){
       msgArr[i+1] = (servoArr[i] & 0x00FF);               // extract LSB only
     }
-    msgArr[NUM_ANA_CHAN+1] = swByte;
-
-    digitalWrite(LED1, HIGH);                             // set LED ON
+    msgArr[NUM_ANA_CHAN+1] = swByteA;
 
     txStart = micros();                                   // capture start time (usec)
     state = radio.startTransmit(msgArr, NUM_ANA_CHAN+2);
