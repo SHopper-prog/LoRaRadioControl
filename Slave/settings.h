@@ -1,11 +1,12 @@
 //
 //
 //
-const String REV            = "vC";             // software revision 
+const String REV            = "vD";             // software revision 
 //
 // I2C bus addresses
 const uint8_t I2C_PWM_ADDR  = 0x40;             // <1000 000> PWM PCA9685 module
 const uint8_t I2C_ADC_ADDR  = 0x48;             // <1001 000> ADC ADS1015 module
+const uint8_t I2C_DIO_ADDR  = 0x27;             // <0100 111> IO expander module
 
 
 //
@@ -26,7 +27,7 @@ const uint8_t I2C_ADC_ADDR  = 0x48;             // <1001 000> ADC ADS1015 module
 #define NUM_PREAMBLE        8                   // pre-amble bits
 #define SYNC_WORD           0x12                // sync word, i.e. network ID
 #define NUM_DIG_CHAN        8                   // 8 bits = 1 byte
-#define NUM_ANA_CHAN        6                   // 6 analogue (servo) channels; sommand + analogue channels + digital channel byte
+#define NUM_ANA_CHAN        6                   // 6 analogue (servo) channels; command + analogue channels + digital channel byte
 #define LEN_ACKMSG          2                   // length of slave ACK messsage; ACK & status byte
 const uint8_t SERVOMSGMAX   = 255;              // maximum value for a servo position value
 
@@ -52,7 +53,7 @@ const uint8_t SERVOMSGMAX   = 255;              // maximum value for a servo pos
 
 // servo settings
 //
-byte SERVO_MID           = 0x80;              // servo default mid-position message value
+byte SERVO_MID              = 0x80;              // servo default mid-position message value
 const int16_t SERVO_FREQ    = 50;               // 50Hz
 uint8_t SERVO_CAL           = 7;                // PCA9685 PWM clock calibratiion channel
 uint16_t NUM_CAL_CYCLES     = 100;              // number of PWM calibration cycles to measure
@@ -66,9 +67,9 @@ const float FREQ_SCALE      = 0.97;
 //  120 = 0.58 msec
 //  512 = 2.5 msec
 //
-const int16_t SERVOMIN[NUM_ANA_CHAN] = {120,120,120,120,120,120};
-const int16_t SERVOMAX[NUM_ANA_CHAN] = {512,512,512,512,512,512};
+const int16_t SERVOMIN[NUM_ANA_CHAN]  = {120,120,120,120,120,120};
+const int16_t SERVOMAX[NUM_ANA_CHAN]  = {512,512,512,512,512,512};
 // the invert array is used to reverse the servo direction when set to 1
-const int8_t SERVOINV[NUM_ANA_CHAN] = {0,1,0,0,0,0,};
+const int8_t SERVOINV[NUM_ANA_CHAN]   = {0,1,0,0,0,0,};
 // the offset are the start positions for each servo pulse so the pulses for each servo are at a different time so no overlap
-const int16_t PWMOFF[NUM_ANA_CHAN] = {0,512,1024,1536,2048,2560};
+const int16_t PWMOFF[NUM_ANA_CHAN]    = {0,512,1024,1536,2048,2560};
