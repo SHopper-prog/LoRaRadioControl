@@ -1,10 +1,11 @@
 //
 //
-const String REV            = "vC";             // software revision 
+const String REV            = "vD";             // software revision 
 //
 // I2C bus addresses
 const uint8_t I2C_PWM_ADDR  = 0x40;             // <1000 000> PWM PCA9685 module
 const uint8_t I2C_ADC_ADDR  = 0x48;             // <1001 000> ADC ADS1015 module
+const uint8_t I2C_DIO_ADDR  = 0x27;             // <0100 111> IO expander MCP23017 module
 
 //
 // RF link
