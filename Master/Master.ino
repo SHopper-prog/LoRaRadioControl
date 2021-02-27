@@ -1,12 +1,17 @@
 
 //  Name:       master.ino
-//  Date:       24 Feb 2021
+//  Date:       26 Feb 2021
 //  Brief:      Radio-control Master device
 //  Author:     Simonn Hopper
 //
 // ***********************************************************************************************
 // Revisions:
 //  Date        rev,    who     what
+//  27/02/2021          SJH     Add display of RF channel number
+//  26/02/2021  vE      SJH     Add code to drive OLED display & display RF parameters etc. on a scrolling display
+//                              Reduce data being sent to console serial port
+//                              Reduce number of analogue channels to 4
+//                              Replace the '#define' with 'const ....'
 //  24/02/2021          SJH     Add trim facility to joystick channels 0 & 1
 //                              Change LED1 to flash when a trim increment/decrement is seen.
 //  23/02/2021  vD      SJH     Add code to read MCP23017 IO expander to read 16-bits switch data, bank A is used
@@ -33,6 +38,8 @@
 //
 // As the MCP23017 is simple no libraries are used to control, simply in-line type code only
 //
+// It uses the SSD1306Ascii library by Bill Greiman, as the adafruit library is too large
+//
 // ***********************************************************************************************
 //
 
@@ -44,7 +51,12 @@
 // include the libraries for ADS1015 ADC module
 #include <Wire.h>
 #include <Adafruit_ADS1015.h>
+Adafruit_ADS1015 ads1015(I2C_ADC_ADDR);           // define (default) I2C address
 
+// includes for SSD1306 OLED driver
+#include "SSD1306Ascii.h"
+#include "SSD1306AsciiWire.h"
+SSD1306AsciiWire oled;
 
 // SX1278 has the following connections with the Arduino pro-mini:
 // NSS pin:   10
@@ -52,9 +64,6 @@
 // RESET pin: 9
 // DIO1 pin:  5
 SX1278 radio = new Module(10, 3, 9, 5);
-
-// ADS1015 module
-Adafruit_ADS1015 ads1015(I2C_ADC_ADDR);           // define (default) I2C address
 
 uint8_t LED1 = 8;
 uint8_t HSW1 = 4;       // hex switch bit 1
@@ -79,7 +88,7 @@ int16_t state = ERR_NONE;
 uint32_t txStart,txFinish,rxStart,rxFinish;
 
 // declare 6 channels of servo position data, set to mid positiion as the default
-uint16_t servoArr[NUM_ANA_CHAN] = {SERVO_DEF,SERVO_DEF,SERVO_DEF,SERVO_DEF,SERVO_DEF,SERVO_DEF};
+uint16_t servoArr[MAX_ANA_CHAN] = {SERVO_DEF,SERVO_DEF,SERVO_DEF,SERVO_DEF,SERVO_DEF,SERVO_DEF};
 
 // byte used to store 8 x on/off channels, set to OFF as the default
 byte swByteA =0b00000000;                         // bank A inputs
@@ -98,7 +107,7 @@ bool rxMsgOk = false;                             // received valid message flag
 
 // variables for joystick inputs
 int16_t vmeas;
-int16_t offset[NUM_ANA_CHAN] = {0,0,0,0,0,0};       // offset values
+int16_t offset[MAX_ANA_CHAN] = {0,0,0,0,0,0};       // offset values
 
 int16_t txCount;                                    // counts Tx/Rx cycles
 int8_t  displayTask;                                // display task
@@ -125,6 +134,16 @@ void setup() {
   Serial.print(REV);
   Serial.println();
 
+  // set up OLED display
+  oled.begin(&Adafruit128x32, I2C_OLED_ADDR);
+  oled.setFont(Callibri14);
+  oled.setScrollMode(SCROLL_MODE_AUTO);
+  oled.clear();
+  oled.print("Master s/ware, rev. ");
+  oled.println(REV);
+
+  delay(2000);                                            // 2 sec delay
+  
   txCount = 0;
   displayTask = 0;
   
@@ -136,6 +155,9 @@ void setup() {
   hexSwitch = readHexSwitch();
   rfChannel = 2 * int(hexSwitch) + 3;
 
+  oled.print("RF channel: ");
+  oled.println(rfChannel);
+  delay(2000);                                            // 2 sec delay
 
   // calculate centre frequency from channel number
   centreFreq =CENTRE_FREQ_CH0 + RF_CH_SPACE * rfChannel; 
@@ -223,6 +245,8 @@ void setup() {
   txStart = micros();                                     // capture start time
   txTimeout = false;                                      // clear Tx timeout flag
 
+  oled.println("configured");
+  
   state = radio.startTransmit(msgArr, NUM_ANA_CHAN+2);    // start transmit mode
 }
 
@@ -260,6 +284,12 @@ void loop() {
   int32_t adcStart,adcStop;                       // used to time the execution time of ADC
   int16_t adc0;                                   // raw ADC value
   float adc1;                                     // scaled value
+
+  int16_t snr;
+  int16_t rssi;
+  int16_t freq_err;
+
+  char bytestr[1];                                // used when converting a byte to a hex string
   
   // check if the previous transmission finished
   if(transmittedFlag == false) {
@@ -269,7 +299,8 @@ void loop() {
     if (micros() > txStart + TX_TIMEOUT){
       Serial.print(F("[Master] ******* Tx Timeout ********"));
       txTimeout = true;
-
+      oled.println("*** Tx timeout ***");
+      
       while (false){
         // failed to send, treat as fatal at the moment.
         // could simply try and re-send
@@ -301,6 +332,7 @@ void loop() {
       //
       Serial.print(F("failed, code "));
       Serial.println(state);
+      oled.println("*** failed to send packet ***");
     }
     txFinish = micros();                                 // capture end of Tx time
     digitalWrite(LED1, LOW);                             // turn LED off
@@ -321,6 +353,7 @@ void loop() {
       // flash LED
       Serial.print(F("failed, code "));
       Serial.println(state);
+      oled.println("*** Failed to set Rx mode ***");
       while (true){
         // medium flashing LED
         digitalWrite(LED1,HIGH);
@@ -341,6 +374,8 @@ void loop() {
         // time out
         Serial.println(F("[Master] ******** Rx Timeout *******"));
         rxTimeout = true;
+        oled.println("*** Rx timeout ***");
+        
         break;
       }
       //
@@ -363,28 +398,29 @@ void loop() {
 //        Serial.println(F("[Master] Received packet!"));
         //
         // only display data every so many Tx/Rx cycles
-        if (txCount > NUM_CYCLES) {
+        if (txCount >= MSG_COUNT) {
           txCount = 0;                                  // reset
 
           // this is the place to check swByteB inputs to act on them, as it only happens every so many cycles
           // e.g. check for a trim inputs being '1' and increment/decrement the servo offset data.
 
           digitalWrite(LED1,LOW);                       // set LED OFF
-
-          
+        
           // joystick channel 0 trim
           // bit 0 increments, bit 1 decrements, if both set then no change
           if (swByteB & 0x01){
             // bit set
             offset[0] = offset[0] +1;
             digitalWrite(LED1,HIGH);                   // set LED ON
-            Serial.println(F("Joystick 0 offset incremented"));
+//            Serial.println(F("Joystick 0 offset incremented"));
+            oled.println("joystick 0 incremented");
           }
           if (swByteB & 0x02){
             // bit set
             offset[0] = offset[0] -1;
             digitalWrite(LED1,HIGH);                   // set LED ON
-            Serial.println(F("Joystick 0 offset decremented"));
+//            Serial.println(F("Joystick 0 offset decremented"));
+            oled.println("joystick 0 decremented");
           }
 
           // joystick channel 1 trim
@@ -393,68 +429,97 @@ void loop() {
             // bit set
             offset[1] = offset[1] +1;
             digitalWrite(LED1,HIGH);                   // set LED ON
-            Serial.println(F("Joystick 1 offset incremented"));
+//            Serial.println(F("Joystick 1 offset incremented"));
+            oled.println("joystick 1 incremented");
           }
           if (swByteB & 0x08){
             // bit set
             offset[1] = offset[1] -1;
             digitalWrite(LED1,HIGH);                   // set LED ON
-            Serial.println(F("Joystick 1 offset decremented"));
+//            Serial.println(F("Joystick 1 offset decremented"));
+            oled.println("joystick 1 decremented");
           }
 
 
           // display digital inputs
-          Serial.print(F("Digital inputs: "));
-          Serial.print(swByteA,HEX);
-          Serial.print(F(" "));
-          Serial.println(swByteB,HEX);
+//          Serial.print(F("Digital inputs: "));
+//          Serial.print(swByteA,HEX);
+//          Serial.print(F(" "));
+//          Serial.println(swByteB,HEX);
           
           // get various parameters of the received packet
           // 
           switch(displayTask) {
             case 0:
               // print data of the packet
-              Serial.print(F("[Master] Data:\t\t"));
+              oled.print("Data: ");
+//              Serial.print(F("[Master] Data:\t\t"));
               for (uint8_t i=0; i< LEN_ACKMSG;i++){
-                Serial.print(msgArr[i],HEX);
-                Serial.print(F(" "));
+//                Serial.print(msgArr[i],HEX);
+//                Serial.print(F(" "));
+
+                byte2str(bytestr,msgArr[i]);
+                oled.print(bytestr);
+                oled.print(" ");
               }
-              Serial.println();
+//              Serial.println();
+              oled.println();
 
               displayTask = 1;                        // next display task
               break;
 
             case 1:        
               // print RSSI (Received Signal Strength Indicator)
-              Serial.print(F("[Master] RSSI:\t\t"));
-              Serial.print(radio.getRSSI());
-              Serial.println(F(" dBm"));
+//              Serial.print(F("[Master] RSSI:\t\t"));
+              rssi = radio.getRSSI();
+//              Serial.print(rssi);
+//              Serial.println(F(" dBm"));
+
+              oled.print("RSSI: ");
+              oled.print(rssi);
+              oled.println(" dBm                  ");
+              
               displayTask = 2;                        // next display task
               break;
 
             case 2:
               // print SNR (Signal-to-Noise Ratio)
-              Serial.print(F("[Master] SNR:\t\t"));
-              Serial.print(radio.getSNR());
-              Serial.println(F(" dB"));
+//              Serial.print(F("[Master] SNR:\t\t"));
+              snr = radio.getSNR();
+//              Serial.print(snr);
+//              Serial.println(F(" dB"));
+
+              oled.print("SNR: ");
+              oled.print(snr);
+              oled.println(" dB                        ");
               displayTask = 3;                        // next display task
               break;
 
             case 3:
               // print frequency error
-              Serial.print(F("[Master] Frequency error:\t"));
-              Serial.print(radio.getFrequencyError());
-              Serial.println(F(" Hz"));
+//              Serial.print(F("[Master] Frequency error:\t"));
+              freq_err = radio.getFrequencyError();
+//              Serial.print(freq_err);
+//              Serial.println(F(" Hz"));
+
+              oled.print("Freq err: ");
+              oled.print(freq_err);
+              oled.println(" Hz                         ");
               displayTask = 4;                        // next display task
               break;
 
             case 4:
               // print the time it has taken to transmit packet and recive the 'ACK' response
-              // note that this is only valid if the actual message is invalid
+              // note that this is only valid if the actual message is valid
       
               Serial.print(F("[Master] Loop time: "));
               Serial.print(rxFinish - txStart);
               Serial.println(F(" us"));
+
+              oled.print("Loop time: ");
+              oled.print(rxFinish - txStart);
+              oled.println(" usec");
+              
               displayTask = 0;                        // next display task
               break;
 
@@ -477,11 +542,13 @@ void loop() {
       } else if (state == ERR_CRC_MISMATCH) {
         // packet was received, but is malformed
         Serial.println(F("[Master] CRC error!"));
+        oled.println("CRC error");
   
       } else {
         // some other error occurred
         Serial.print(F("[Master] Failed, code "));
         Serial.println(state);
+        oled.println("Other error");
       }
     }
 
@@ -623,3 +690,17 @@ uint8_t readHexSwitch() {
 
   return hexSwitch;
 }
+
+//
+//
+// some byte to (hex) string conversion functions
+void byte2str(char* buff, uint8_t val) {  // convert an 8-bit byte to a string of 2 hexadecimal characters
+  buff[0] = nibble2hex(val >> 4);
+  buff[1] = nibble2hex(val);
+}
+
+char nibble2hex(uint8_t nibble) {  // convert a 4-bit nibble to a hexadecimal character
+  nibble &= 0xF;
+  return nibble > 9 ? nibble - 10 + 'A' : nibble + '0';
+}
+
