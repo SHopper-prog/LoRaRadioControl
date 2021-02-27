@@ -1,12 +1,22 @@
 //
 //  Name:       slave.ino
-//  Date:       24 Feb 2021
+//  Date:       26 Feb 2021
 //  Brief:      Radio-control Slave device
-//  Author:     Simonn Hopper
+//  Author:     Simon Hopper
 //
 // ***********************************************************************************************
 // Revisions:
 //  Date        rev.    who     what
+//  27/02/2021          SJH     Add delay before sending ACK
+//                              Add Rx Fail count before declaring FAILSAFE mode
+//                              Add display of RF channel number
+//                              Set bits in status byte returned to Master for Rx timeout, Failsafe & message error, reset
+//                              using digital channel 7
+//  26/02/2021          SJH     Finish of using OLED display & displaying RF parameters on a scrolling display
+//                              Reduce the amount of data being sent to colsole serial port
+//                              Reduce the number of analogue channels to 4
+//                              Replace the '#define' with 'const ...'
+//  25/02/2021  vE      SJH     Add a different OLED library that fits in the FLASH
 //  24/02/2021          SJH     Add the rest of the digital channel controls
 //  23/02/2021  vD      SJH     Add code to output some of the digital channels
 //                              Remove OLED display code as it takes up too much memory
@@ -33,6 +43,8 @@
 //
 // It uses adafruit PWM library to control PCA9685 16-channel PWM controller
 //
+// It uses the SSD1306Ascii library by Bill Greiman as the adafruit library is too large
+//
 // ***********************************************************************************************
 //
 
@@ -46,11 +58,10 @@
 #include <Adafruit_PWMServoDriver.h>
 
 // includes for SSD1306 OLED driver
-// #include <SPI.h>
-// #include <Wire.h>
-// #include <Adafruit_GFX.h>
-// #include <Adafruit_SSD1306.h>
+#include "SSD1306Ascii.h"
+#include "SSD1306AsciiWire.h"
 
+SSD1306AsciiWire oled;
 
 
 // SX1278 has the following connections with the Arduino pro-mini:
@@ -83,7 +94,7 @@ int rfChannel = RF_CH_DEF;
 uint32_t rxStart,rxFinish,txStart,txFinish;
 
 // declare 6 channels of servo position data, set to mid positiion as the default
-byte servoArr[NUM_ANA_CHAN] = {SERVO_MID,SERVO_MID,SERVO_MID,SERVO_MID,SERVO_MID,SERVO_MID};
+byte servoArr[MAX_ANA_CHAN] = {SERVO_MID,SERVO_MID,SERVO_MID,SERVO_MID,SERVO_MID,SERVO_MID};
 
 // byte used to store 8 x on/off channels, set to OFF as the default
 byte swByte =0b00000000;
@@ -113,20 +124,13 @@ uint8_t servoNum = 0;                               // current servo number
 
 uint8_t PWM_CAL_IN = 2;                             // input pin for calibration PWM, via 22k series resistor
 uint16_t pulseStart,pulseStop;                      // start & stop times for servo PWM
-float servoConst[NUM_ANA_CHAN] = {0,0,0,0,0,0};     //
-int16_t failSafe[NUM_ANA_CHAN] = {0,0,0,0,0,0};     //
+float servoConst[MAX_ANA_CHAN] = {0,0,0,0,0,0};     //
+int16_t failSafe[MAX_ANA_CHAN] = {0,0,0,0,0,0};     //
 uint16_t totalCounter;                              // PWM calibration cycle counter
 
+int8_t rxFailCount;                                   // counts consecutive Rx Fail timeoute
 int16_t txCount;                                    //
 int8_t displayTask;                                   //
-
-
-// #define SCREEN_WIDTH 128          // OLED display width, in pixels
-// #define SCREEN_HEIGHT 32          // OLED display height, in pixels
-
-// #define OLED_RESET     -1         // Reset pin # (or -1 if sharing Arduino reset pin)
-// #define SCREEN_ADDRESS 0x3C       ///< See datasheet for Address; 0x3D for 128x64, 0x3C for 128x32
-// Adafruit_SSD1306 display(SCREEN_WIDTH, SCREEN_HEIGHT, &Wire, OLED_RESET);
 
 
 //
@@ -154,6 +158,14 @@ void setup() {
   Serial.println(REV);
   Serial.println();
 
+  // set up OLED display
+  oled.begin(&Adafruit128x32, I2C_OLED_ADDR);
+  oled.setFont(Callibri14);
+  oled.setScrollMode(SCROLL_MODE_AUTO);
+  oled.clear();
+  oled.print("Slave software, rev. ");
+  oled.println(REV);
+  delay(2000);                                // 2 sec delay
 
   //
   // read hex switch inputs to get RF channel number
@@ -162,7 +174,8 @@ void setup() {
   // to allow for the RF bandwidth actually used; approx 3 channels.
   hexSwitch = readHexSwitch();
   rfChannel = 2 * int(hexSwitch) + 3;
-
+  oled.print("RF channel: ");
+  oled.println(rfChannel);
 
   // calulate centre frequency from channel number
   centreFreq =CENTRE_FREQ_CH0 + RF_CH_SPACE * rfChannel; 
@@ -173,6 +186,7 @@ void setup() {
   //
   txCount = 0;
   displayTask = 0;
+  rxFailCount = 0;
   //
   // initialise the PCA0685 PWM
   Serial.print(F("[Slave] Setting up PCA0685 PWM module ..."));
@@ -202,48 +216,6 @@ void setup() {
     failSafe[servoNum] = 128;
   }
   Serial.println(F(" success!"));
-
-  // initialise OLED display
-  //
-//  Serial.println(F("setting up OLED display"));
-//  // SSD1306_SWITCHCAPVCC = generate display voltage from 3.3V internally
-//  if(!display.begin(SSD1306_SWITCHCAPVCC, SCREEN_ADDRESS)) {
-//    Serial.println(F("SSD1306 allocation failed"));
-//    for(;;); // Don't proceed, loop forever
-//  }
-//
-  //
-  // Show initial display buffer contents on the screen --
-  // the library initializes this with an Adafruit splash screen.
-//  display.display();
-//  delay(2000); // Pause for 2 seconds
-//
-//  // Draw a single pixel in white
-//  display.drawPixel(10, 10, SSD1306_WHITE);
-
-  // Show the display buffer on the screen. You MUST call display() after
-  // drawing commands to make them visible on screen!
-//  display.display();
-//  delay(2000);
-
-//  testdrawchar();      // Draw characters of the default font
-//
-//  testdrawstyles();    // Draw 'stylized' characters
-//
-//  testscrolltext();    // Draw scrolling text
-//
-//  testdrawbitmap();    // Draw a small bitmap image
-//
-  // Invert and restore display, pausing in-between
-//  display.invertDisplay(true);
-//  delay(1000);
-//  display.invertDisplay(false);
-//  delay(1000);
-//
-//  testanimate(logo_bmp, LOGO_WIDTH, LOGO_HEIGHT); // Animate bitmaps
-
-
-
   
   //
   // initialize SX1278 with default settings
@@ -262,6 +234,7 @@ void setup() {
   } else {
     Serial.print(F("failed, code "));
     Serial.println(state,HEX);
+    oled.print("*** Failed to config SX1278 ***\n");
     while (true){
       //
       // failed to setup SX1278 module, treat as fatal
@@ -286,6 +259,7 @@ void setup() {
   } else {
     Serial.print(F("failed, code "));
     Serial.println(state,HEX);
+    oled.print("*** Failed to start Rx ***\n");
     while (true){
       // failed to start receiver, treat as fatal
       //
@@ -311,6 +285,8 @@ void setup() {
   // radio.receive();
   // radio.readData();
   // radio.scanChannel();
+
+  oled.println("Configured");
 }
 
 //
@@ -344,6 +320,11 @@ void setFlag(void) {
 //
 //
 void loop() {
+  int16_t rssi;
+  int16_t snr;
+  int16_t freq_err;
+  char bytestr[1];                                        // used when converting a byte to a hex string
+  
   // check if the interrupt flag is set
   if(receivedFlag == false) {
     // not yet received message
@@ -355,31 +336,36 @@ void loop() {
       receivedFlag = false;                               // clear interrupt flag
       rxTimeout = true;                                   // set Rx timeout flag
 
-      //
-      // do any timeout 'failsafe' actions here
-      //
-      for (servoNum = 0; servoNum < NUM_ANA_CHAN; servoNum++)
-      {
-        pulseStart = PWMOFF[servoNum];
-        pulseStop = pulseStart + SERVOMIN[servoNum] + servoConst[servoNum]* failSafe[servoNum];
-        pwm.setPWM(servoNum,pulseStart,pulseStop);
-      }
-
-//        display.clearDisplay();          
-//        display.setTextSize(2);                       // biger 2:1 pixel scale
-//        display.setTextColor(SSD1306_WHITE);          // Draw white text
-//        display.setCursor(0, 0);                      // Start at top-left corner
-//        display.cp437(true);                          // Use full 256 char 'Code Page 437' font
-//
-//        display.write("Rx Timeout");
-//
-//        display.display();
-
-
-      //
-      // set status error bit?
-      //
+      oled.println("** Rx Timeout ***");
       
+      statusByte = statusByte | FLG_RXTIMEOUT;
+
+      if (rxFailCount >= FSAFE_COUNT)
+      {
+        //
+        // do any timeout 'failsafe' actions here
+        //
+        Serial.println(F("[Slave] ******** FAILSAFE **********"));
+        oled.println("**** FAILSAFE ****");
+
+        statusByte = statusByte | FLG_FAILSAFE;
+        
+        for (servoNum = 0; servoNum < NUM_ANA_CHAN; servoNum++)
+        {
+          pulseStart = PWMOFF[servoNum];
+          pulseStop = pulseStart + SERVOMIN[servoNum] + servoConst[servoNum]* failSafe[servoNum];
+          pwm.setPWM(servoNum,pulseStart,pulseStop);
+        }
+
+        //
+        // set status error bit?
+        //
+      }
+      else
+      {
+        rxFailCount = rxFailCount +1;
+        // do we set error status bit?
+      }
 
       // 
       // now restart Receiver
@@ -430,6 +416,7 @@ void loop() {
     
     rxFinish = micros();                                    // rx finish time
     rxMsgOk = false;
+    rxFailCount = 0;                                        // reset Rx fail count
     //
     // read received data as byte array
     state = radio.readData(msgArr, NUM_ANA_CHAN+2);
@@ -437,12 +424,13 @@ void loop() {
       // packet was successfully received
       rxMsgOk = true;                                       // set flag to indicate valid received packet
 //      Serial.println(F("[Slave] Received packet!"));
-      if (txCount > 10)
+      if (txCount >= MSG_COUNT)
       {
+        //
+        // Every so many Rx messages extract various nuggets of information about received packet
+        // and display one at a time
+        //
         txCount = 0;
-        //
-        // extract various nuggets of information about received packet
-        //
         switch(displayTask){
           case 0:
             // print data of the packet
@@ -450,68 +438,56 @@ void loop() {
             for (uint8_t i=0; i< NUM_ANA_CHAN+2;i++){
               Serial.print(msgArr[i],HEX);
               Serial.print(F(" "));
+              if (i>=1){
+                byte2str(bytestr,msgArr[i]);                // don't bother printing byte[0]
+                oled.print(bytestr);
+                oled.print(" ");
+              }
             }
             Serial.println();
+            oled.println();
             displayTask = 1;
             break;
 
           case 1:
             // print RSSI (Received Signal Strength Indicator)
-            Serial.print(F("[Slave] RSSI:\t\t"));
-            Serial.print(radio.getRSSI());
-            Serial.println(F(" dBm"));
-
-//            display.clearDisplay();          
-//            display.setTextSize(1);                       // Normal 1:1 pixel scale
-//            display.setTextColor(SSD1306_WHITE);          // Draw white text
-//            display.setCursor(0, 0);                      // Start at top-left corner
-//            display.cp437(true);                          // Use full 256 char 'Code Page 437' font
-//
-//            display.write("RSSI: ");
-//            display.write("dBm");
-//
-//            display.display();
+            rssi = radio.getRSSI();
+//            Serial.print(F("[Slave] RSSI:\t\t"));
+//            Serial.print(rssi);
+//            Serial.println(F(" dBm"));
+            
+            oled.print("RSSI: ");
+            oled.print(rssi);
+            oled.println(" dBm");
             
             displayTask = 2;
             break;
 
           case 2:
             // print SNR (Signal-to-Noise Ratio)
-            Serial.print(F("[Slave] SNR:\t\t"));
-            Serial.print(radio.getSNR());
-            Serial.println(F(" dB"));
+            snr = radio.getSNR();
+//            Serial.print(F("[Slave] SNR:\t\t"));
+//            Serial.print(snr);
+//            Serial.println(F(" dB"));
 
-//            display.clearDisplay();          
-//            display.setTextSize(1);                       // Normal 1:1 pixel scale
-//            display.setTextColor(SSD1306_WHITE);          // Draw white text
-//            display.setCursor(0, 0);                      // Start at top-left corner
-//            display.cp437(true);                          // Use full 256 char 'Code Page 437' font
-//
-//            display.write("SNR: ");
-//            display.write("dB");
-//
-//            display.display();
-
+            oled.print("SNR: ");
+            oled.print(snr);
+            oled.println(" dB");
+            
             displayTask = 3;
             break;
 
           case 3:
             // print frequency error
-            Serial.print(F("[Slave] Frequency error:\t"));
-            Serial.print(radio.getFrequencyError());
-            Serial.println(F(" Hz"));
+            freq_err = radio.getFrequencyError();
+//            Serial.print(F("[Slave] Frequency error:\t"));
+//            Serial.print(freq_err);
+//            Serial.println(F(" Hz"));
 
-//            display.clearDisplay();          
-//            display.setTextSize(1);                       // Normal 1:1 pixel scale
-//            display.setTextColor(SSD1306_WHITE);          // Draw white text
-//            display.setCursor(0, 0);                      // Start at top-left corner
-//            display.cp437(true);                          // Use full 256 char 'Code Page 437' font
-//
-//            display.write("Frequnecy error: ");
-//            display.write("Hz");
-//
-//            display.display();
-
+            oled.print("Freq Err: ");
+            oled.print(freq_err);
+            oled.println(" Hz");
+            
             displayTask = 0;
             break;
 
@@ -629,6 +605,7 @@ void loop() {
       // bit 7
       if (swByte & 0x80){
         pwm.setPWM(15,4096,0);                 // fully on
+        statusByte = 0x00;                    // clear status byte
       }
       else {
         pwm.setPWM(15,0,4096);                 // fully off
@@ -645,15 +622,27 @@ void loop() {
       Serial.println(F("[Slave] CRC error!"));
       //
       // set error bit in status byte here
+      statusByte = statusByte | FLG_MSGERR;
 
     } else {
-      // some other error occurred whilts reading data
+      // some other error occurred whilst reading data
       Serial.print(F("[Slave] Failed data read, code "));
       Serial.println(state,HEX);
       //
       // set error bit in status byte here
+      statusByte = statusByte | FLG_MSGERR;
       
     }
+
+    // *********************************************************************************
+    //
+    // The master takes a finite time to switch from Tx to Rx and even with the Rx message processing
+    // some extra delay may be required if the Master signals the occasional 'Rx Failure'.
+    // This extra padding is added here to prevent the Slave from sending the ACK message before 
+    // the Master is ready to receive.
+    delay(20);                                           // msec delay
+
+
 
     //
     // send ACK message back
@@ -687,6 +676,8 @@ void loop() {
           //
           
           Serial.println(F("[Slave] ****** Tx timeout ******"));
+
+          oled.println("*** Tx timeout ***");
           break;  
         }
       }
@@ -705,6 +696,7 @@ void loop() {
       //
       Serial.print(F("failed to send, code "));
       Serial.println(state,HEX);
+      oled.println("Failed to send");
     }
 
     digitalWrite(LED1, LOW);                            // set LED OFF
@@ -723,6 +715,8 @@ void loop() {
     } else {
       Serial.print(F("failed to set up Rx mode, code "));
       Serial.println(state,HEX);
+
+      oled.println("*** Failed to setup Rx mode ***");
       while (true){
         // this is treated as fatal so set LED to flash
         //
@@ -858,4 +852,17 @@ void cal_pwm() {
   // now update PCA9685 PWM frequency with corrected value
   pwm.setPWMFreq(SERVO_FREQ * freqScale);  // Analog servos run at ~50 Hz updates
   
+}
+
+//
+//
+// some byte to (hex) string conversion functions
+void byte2str(char* buff, uint8_t val) {  // convert an 8-bit byte to a string of 2 hexadecimal characters
+  buff[0] = nibble2hex(val >> 4);
+  buff[1] = nibble2hex(val);
+}
+
+char nibble2hex(uint8_t nibble) {  // convert a 4-bit nibble to a hexadecimal character
+  nibble &= 0xF;
+  return nibble > 9 ? nibble - 10 + 'A' : nibble + '0';
 }
