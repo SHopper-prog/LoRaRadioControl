@@ -1,6 +1,7 @@
 //
 //
-const String REV            = "vE";             // Master software revision 
+const String REV            = "vF";             // Master software revision 
+const uint8_t REVLEN        = 3;                // s/w revision length, plus terminator
 //
 // I2C bus addresses
 const uint8_t I2C_PWM_ADDR  = 0x40;             // <1000 000> PWM PCA9685 module
@@ -41,8 +42,8 @@ const uint8_t FLG_MSGERR      = 0b00000100;     // error in received message
 
 //
 // Timeouts
-const uint32_t RX_TIMEOUT   = 1000000;             // 1,000,000 usec = 2 sec
-const uint32_t TX_TIMEOUT   = 500000;              // 500,000 usec = 0.5 sec
+const uint32_t RX_TIMEOUT   = 300000;           // 300,000 usec = 0.3 sec
+const uint32_t TX_TIMEOUT   = 500000;           // 500,000 usec = 0.5 sec
 
 //
 //

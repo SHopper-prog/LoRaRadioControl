@@ -7,6 +7,7 @@
 // ***********************************************************************************************
 // Revisions:
 //  Date        rev,    who     what
+//  13/03/2021  vF      SJH     Change to a 128x64 SH1106 OLED display
 //  27/02/2021          SJH     Add display of RF channel number
 //  26/02/2021  vE      SJH     Add code to drive OLED display & display RF parameters etc. on a scrolling display
 //                              Reduce data being sent to console serial port
@@ -38,7 +39,7 @@
 //
 // As the MCP23017 is simple no libraries are used to control, simply in-line type code only
 //
-// It uses the SSD1306Ascii library by Bill Greiman, as the adafruit library is too large
+// It uses the SH1106 ss_oled lilbrary by Larry Bank as the adafruit library is too large.
 //
 // ***********************************************************************************************
 //
@@ -54,9 +55,27 @@
 Adafruit_ADS1015 ads1015(I2C_ADC_ADDR);           // define (default) I2C address
 
 // includes for SSD1306 OLED driver
-#include "SSD1306Ascii.h"
-#include "SSD1306AsciiWire.h"
-SSD1306AsciiWire oled;
+//#include "SSD1306Ascii.h"
+//#include "SSD1306AsciiWire.h"
+//SSD1306AsciiWire oled;
+
+//
+// includes for SH1106 OLED driver
+#include <ss_oled.h>
+
+#define SDA_PIN -1                                // SDA; use <wire.h>
+#define SCL_PIN -1                                // SCL; use <wire.h>
+#define RESET_PIN -1                              // not used
+#define FLIP180 0                                 //
+#define INVERT 0                                  //
+#define MY_OLED OLED_128x64                       //
+#define OLED_WIDTH 128                            //
+#define OLED_HEIGHT 64                            //
+#define USE_HW_I2C 1                              //
+
+static uint8_t *ucBackBuffer = NULL;              // not enough RAM for 1k (128 * 64 /8 bytes = 1024 bytes)
+SSOLED oled;
+ 
 
 // SX1278 has the following connections with the Arduino pro-mini:
 // NSS pin:   10
@@ -85,7 +104,7 @@ int16_t state = ERR_NONE;
 //
 // this needs sorting.
 //
-uint32_t txStart,txFinish,rxStart,rxFinish;
+uint32_t txStart,txFinish,rxStart,rxFinish,loopTime;
 
 // declare 6 channels of servo position data, set to mid positiion as the default
 uint16_t servoArr[MAX_ANA_CHAN] = {SERVO_DEF,SERVO_DEF,SERVO_DEF,SERVO_DEF,SERVO_DEF,SERVO_DEF};
@@ -111,6 +130,15 @@ int16_t offset[MAX_ANA_CHAN] = {0,0,0,0,0,0};       // offset values
 
 int16_t txCount;                                    // counts Tx/Rx cycles
 int8_t  displayTask;                                // display task
+
+const uint8_t OLED_RFCHAN = 1;                      // OLED display line 1
+const uint8_t OLED_DATA = 2;                        // OLED display line 2
+const uint8_t OLED_RSSI = 3;                        // OLED display line 3
+const uint8_t OLED_SNR = 4;                         // OLED display line 4
+const uint8_t OLED_FRERR = 5;                       // OLED display line 5
+const uint8_t OLED_LTIME = 6;                       // OLED display line 6
+const uint8_t OLED_STATUS = 7;                      // OLED display line 7
+
 //
 //
 //
@@ -119,6 +147,9 @@ int8_t  displayTask;                                // display task
 //
 void setup() {
   float centreFreq;
+  int rc;
+  char szTemp[256];                               // OLED buffer
+  char bytestr[1];
 
   // define input pins and their pullups
   pinMode(HSW1,INPUT_PULLUP);                     // hex switch bit 1
@@ -130,20 +161,50 @@ void setup() {
 
   // initial banner
   Serial.println();
-  Serial.print(F("Master LoRa SX1278 rev: "));
+  Serial.print(F("[Master] Master LoRa SX1278 rev: "));
   Serial.print(REV);
   Serial.println();
 
   // set up OLED display
-  oled.begin(&Adafruit128x32, I2C_OLED_ADDR);
-  oled.setFont(Callibri14);
-  oled.setScrollMode(SCROLL_MODE_AUTO);
-  oled.clear();
-  oled.print("Master s/ware, rev. ");
-  oled.println(REV);
+//  oled.begin(&Adafruit128x32, I2C_OLED_ADDR);
+//  oled.setFont(Callibri14);
+//  oled.setScrollMode(SCROLL_MODE_AUTO);
+//  oled.clear();
+//  oled.print("Master s/ware, rev. ");
+//  oled.println(REV);
 
-  delay(2000);                                            // 2 sec delay
+  rc = oledInit(&oled, MY_OLED, I2C_OLED_ADDR, FLIP180, INVERT, USE_HW_I2C, SDA_PIN, SCL_PIN, RESET_PIN, 400000L); // use standard I2C bus at 400Khz
+  if (rc != OLED_NOT_FOUND){
+    char *msgs[] = {(char *)"SSD1306 @ 0x3C", (char *)"SSD1306 @ 0x3D",(char *)"SH1106 @ 0x3C",(char *)"SH1106 @ 0x3D"};
+    oledFill(&oled, 0, 1);
+    oledWriteString(&oled, 0,0,0,msgs[rc], FONT_NORMAL, 0, 1);
+    oledSetBackBuffer(&oled, ucBackBuffer);
+    Serial.println(F("[Master] OLED found"));
+    delay(2000);
+  }
+
+  sprintf(szTemp, "Master s/w, rev. ");
+  REV.toCharArray(bytestr,REVLEN);
+  strcat(szTemp, bytestr);
+  strcat(szTemp,"        ");
+  oledWriteString(&oled,0,0,0,szTemp, FONT_SMALL, 0, 1);
   
+  delay(2000);                                            // 2 sec delay
+
+  // set up fixed display text
+  sprintf(szTemp,"RF channel: ");
+  oledWriteString(&oled,0,0,OLED_RFCHAN,szTemp, FONT_SMALL, 0, 1);
+  sprintf(szTemp,"Data: ");
+  oledWriteString(&oled,0,0,OLED_DATA,szTemp, FONT_SMALL, 0, 1);
+  sprintf(szTemp,"RSSI: ");
+  oledWriteString(&oled,0,0,OLED_RSSI,szTemp, FONT_SMALL, 0, 1);
+  sprintf(szTemp,"SNR: ");
+  oledWriteString(&oled,0,0,OLED_SNR,szTemp, FONT_SMALL, 0, 1);
+  sprintf(szTemp,"Freq err: ");
+  oledWriteString(&oled,0,0,OLED_FRERR,szTemp, FONT_SMALL, 0, 1);
+  sprintf(szTemp,"L. time: ");
+  oledWriteString(&oled,0,0,OLED_LTIME,szTemp, FONT_SMALL, 0, 1);
+ 
   txCount = 0;
   displayTask = 0;
   
@@ -155,8 +216,10 @@ void setup() {
   hexSwitch = readHexSwitch();
   rfChannel = 2 * int(hexSwitch) + 3;
 
-  oled.print("RF channel: ");
-  oled.println(rfChannel);
+//  oled.print("RF channel: ");
+//  oled.println(rfChannel);
+  sprintf(szTemp,"RF channel: %d", (int)rfChannel);
+  oledWriteString(&oled,0,0,1,szTemp,FONT_SMALL,0,1);
   delay(2000);                                            // 2 sec delay
 
   // calculate centre frequency from channel number
@@ -245,7 +308,9 @@ void setup() {
   txStart = micros();                                     // capture start time
   txTimeout = false;                                      // clear Tx timeout flag
 
-  oled.println("configured");
+//  oled.println("configured");
+  sprintf(szTemp,"configured         ");
+  oledWriteString(&oled,0,0,0,szTemp,FONT_SMALL,0,1);
   
   state = radio.startTransmit(msgArr, NUM_ANA_CHAN+2);    // start transmit mode
 }
@@ -290,6 +355,7 @@ void loop() {
   int16_t freq_err;
 
   char bytestr[1];                                // used when converting a byte to a hex string
+  char szTemp[256];                               // OLED buffer
   
   // check if the previous transmission finished
   if(transmittedFlag == false) {
@@ -299,7 +365,9 @@ void loop() {
     if (micros() > txStart + TX_TIMEOUT){
       Serial.print(F("[Master] ******* Tx Timeout ********"));
       txTimeout = true;
-      oled.println("*** Tx timeout ***");
+//      oled.println("*** Tx timeout ***");
+      sprintf(szTemp,"*** Tx timeout ***");
+      oledWriteString(&oled,0,0,0,szTemp,FONT_NORMAL,0,1);
       
       while (false){
         // failed to send, treat as fatal at the moment.
@@ -332,7 +400,9 @@ void loop() {
       //
       Serial.print(F("failed, code "));
       Serial.println(state);
-      oled.println("*** failed to send packet ***");
+//      oled.println("*** Failed to send packet ***");
+      sprintf(szTemp,"*** Failed to send packet ***");
+      oledWriteString(&oled,0,0,0,szTemp,FONT_NORMAL,0,1);
     }
     txFinish = micros();                                 // capture end of Tx time
     digitalWrite(LED1, LOW);                             // turn LED off
@@ -353,7 +423,9 @@ void loop() {
       // flash LED
       Serial.print(F("failed, code "));
       Serial.println(state);
-      oled.println("*** Failed to set Rx mode ***");
+//      oled.println("*** Failed to set Rx mode ***");
+      sprintf(szTemp,"*** Failed to set Rx mode ***");
+      oledWriteString(&oled,0,0,0,szTemp,FONT_NORMAL,0,1);
       while (true){
         // medium flashing LED
         digitalWrite(LED1,HIGH);
@@ -374,7 +446,9 @@ void loop() {
         // time out
         Serial.println(F("[Master] ******** Rx Timeout *******"));
         rxTimeout = true;
-        oled.println("*** Rx timeout ***");
+//        oled.println("*** Rx timeout ***");
+        sprintf(szTemp,"*** Rx timeout ***");
+        oledWriteString(&oled,0,0,0,szTemp,FONT_NORMAL,0,1);
         
         break;
       }
@@ -382,7 +456,6 @@ void loop() {
       // not yet timed out so go round again
       //
     }
-
     // block any further interrupts while we process the received data
     enableInterrupt = false;                          // disable interrupt
     transmittedFlag = false;                          // clear interrupt flag
@@ -413,14 +486,18 @@ void loop() {
             offset[0] = offset[0] +1;
             digitalWrite(LED1,HIGH);                   // set LED ON
 //            Serial.println(F("Joystick 0 offset incremented"));
-            oled.println("joystick 0 incremented");
+//            oled.println("joystick 0 incremented");
+            sprintf(szTemp,"Joystick 0 incremented");
+            oledWriteString(&oled,0,0,0,szTemp,FONT_SMALL,0,1);
           }
           if (swByteB & 0x02){
             // bit set
             offset[0] = offset[0] -1;
             digitalWrite(LED1,HIGH);                   // set LED ON
 //            Serial.println(F("Joystick 0 offset decremented"));
-            oled.println("joystick 0 decremented");
+//            oled.println("joystick 0 decremented");
+            sprintf(szTemp,"Joystick 0 decremented");
+            oledWriteString(&oled,0,0,0,szTemp,FONT_SMALL,0,1);
           }
 
           // joystick channel 1 trim
@@ -430,14 +507,18 @@ void loop() {
             offset[1] = offset[1] +1;
             digitalWrite(LED1,HIGH);                   // set LED ON
 //            Serial.println(F("Joystick 1 offset incremented"));
-            oled.println("joystick 1 incremented");
+//            oled.println("joystick 1 incremented");
+            sprintf(szTemp,"Joystick 1 incremented");
+            oledWriteString(&oled,0,0,0,szTemp,FONT_SMALL,0,1);
           }
           if (swByteB & 0x08){
             // bit set
             offset[1] = offset[1] -1;
             digitalWrite(LED1,HIGH);                   // set LED ON
 //            Serial.println(F("Joystick 1 offset decremented"));
-            oled.println("joystick 1 decremented");
+//            oled.println("joystick 1 decremented");
+            sprintf(szTemp,"Joystick 1 decremented");
+            oledWriteString(&oled,0,0,0,szTemp,FONT_SMALL,0,1);
           }
 
 
@@ -452,19 +533,28 @@ void loop() {
           switch(displayTask) {
             case 0:
               // print data of the packet
-              oled.print("Data: ");
+//              oled.print("Data: ");
+              sprintf(szTemp,"");
 //              Serial.print(F("[Master] Data:\t\t"));
               for (uint8_t i=0; i< LEN_ACKMSG;i++){
 //                Serial.print(msgArr[i],HEX);
 //                Serial.print(F(" "));
 
                 byte2str(bytestr,msgArr[i]);
-                oled.print(bytestr);
-                oled.print(" ");
+//                oled.print(bytestr);
+//                oled.print(" ");
+                itoa(msgArr[i],bytestr,16);
+                strcat(szTemp,bytestr);
+                strcat(szTemp," ");
               }
-//              Serial.println();
-              oled.println();
+              Serial.println();
+//              oled.println();
+              oledWriteString(&oled,0,60,OLED_DATA,szTemp,FONT_SMALL,0,1);
 
+              // clear top line line
+              sprintf(szTemp,"                         ");
+              oledWriteString(&oled,0,0,0,szTemp,FONT_SMALL,0,1);
+              
               displayTask = 1;                        // next display task
               break;
 
@@ -475,9 +565,11 @@ void loop() {
 //              Serial.print(rssi);
 //              Serial.println(F(" dBm"));
 
-              oled.print("RSSI: ");
-              oled.print(rssi);
-              oled.println(" dBm                  ");
+//              oled.print("RSSI: ");
+//              oled.print(rssi);
+//              oled.println(" dBm                  ");
+              sprintf(szTemp,"%d dBm   ",rssi);
+              oledWriteString(&oled,0,60,OLED_RSSI,szTemp,FONT_SMALL,0,1);
               
               displayTask = 2;                        // next display task
               break;
@@ -489,9 +581,12 @@ void loop() {
 //              Serial.print(snr);
 //              Serial.println(F(" dB"));
 
-              oled.print("SNR: ");
-              oled.print(snr);
-              oled.println(" dB                        ");
+//              oled.print("SNR: ");
+//              oled.print(snr);
+//              oled.println(" dB                        ");
+              sprintf(szTemp,"%d dB     ",snr);
+              oledWriteString(&oled,0,60,OLED_SNR,szTemp,FONT_SMALL,0,1);
+
               displayTask = 3;                        // next display task
               break;
 
@@ -502,27 +597,56 @@ void loop() {
 //              Serial.print(freq_err);
 //              Serial.println(F(" Hz"));
 
-              oled.print("Freq err: ");
-              oled.print(freq_err);
-              oled.println(" Hz                         ");
+//              oled.print("Freq err: ");
+//              oled.print(freq_err);
+//              oled.println(" Hz                         ");
+              sprintf(szTemp,"%d Hz     ",freq_err);
+              oledWriteString(&oled,0,60,OLED_FRERR,szTemp,FONT_SMALL,0,1);
+
               displayTask = 4;                        // next display task
               break;
 
             case 4:
               // print the time it has taken to transmit packet and recive the 'ACK' response
               // note that this is only valid if the actual message is valid
-      
-              Serial.print(F("[Master] Loop time: "));
-              Serial.print(rxFinish - txStart);
-              Serial.println(F(" us"));
 
-              oled.print("Loop time: ");
-              oled.print(rxFinish - txStart);
-              oled.println(" usec");
+              loopTime = rxFinish - txStart;
+//              Serial.print(F("[Master] Loop time: "));
+//              Serial.print(loopTime);
+//              Serial.println(F(" us"));
+
+//              oled.print("Loop time: ");
+//              oled.print(rxFinish - txStart);
+//              oled.println(" usec");
+              sprintf(szTemp,"%d msec       ",(int)(loopTime/1000));
+              oledWriteString(&oled,0,60,OLED_LTIME,szTemp,FONT_SMALL,0,1);
               
-              displayTask = 0;                        // next display task
+              displayTask = 5;                        // next display task
               break;
 
+            case 5:
+              // display ACK error status
+              sprintf(szTemp,"");
+              // check bit 2
+              if (msgArr[1] & 0x04)
+                strcat(szTemp,"RE ");
+              else
+                strcat(szTemp,"   ");
+              // check bit 1
+              if (msgArr[1] & 0x02)
+                strcat(szTemp,"RT ");
+              else
+                strcat(szTemp,"   ");
+              // check bit 0
+              if (msgArr[1] & 0x01)
+                strcat(szTemp,"FS ");
+              else
+                strcat(szTemp,"   ");
+              // now display
+              oledWriteString(&oled,0,0,OLED_STATUS,szTemp,FONT_SMALL,0,1);
+              displayTask = 0;                        // next display task
+              break;
+            
             default:
               displayTask = 0;
               break;
@@ -542,13 +666,17 @@ void loop() {
       } else if (state == ERR_CRC_MISMATCH) {
         // packet was received, but is malformed
         Serial.println(F("[Master] CRC error!"));
-        oled.println("CRC error");
+//        oled.println("CRC error");
+        sprintf(szTemp,"CRC error");
+        oledWriteString(&oled,0,0,0,szTemp,FONT_NORMAL,0,1);
   
       } else {
         // some other error occurred
         Serial.print(F("[Master] Failed, code "));
         Serial.println(state);
-        oled.println("Other error");
+//        oled.println("Other error");
+        sprintf(szTemp,"Other error");
+        oledWriteString(&oled,0,0,0,szTemp,FONT_NORMAL,0,1);
       }
     }
 
@@ -703,4 +831,3 @@ char nibble2hex(uint8_t nibble) {  // convert a 4-bit nibble to a hexadecimal ch
   nibble &= 0xF;
   return nibble > 9 ? nibble - 10 + 'A' : nibble + '0';
 }
-
