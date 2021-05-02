@@ -33,6 +33,9 @@ Uses LoRa mode as I can't get FSK to work.
 It uses the RadioLib library to provide the control for the SX1278 RF module, with control from a
 3.3V Arduibo Pro-mini.
 
+If too many consectutive Rx timeouts are found (i.e. too many missing messages) at the slave then the slave enters the 'failsafe' mode,
+where the servo channels and digital channels are set to predetermined values.
+
 To prevent too much time taken up on display tasks the measured RF channel parameters are display one by one in a sequence, 
 one item displayed every so many Tx/Rx message pairs, current 10, so about every 1.5 secs. An OLED display was tried but the 
 library code is too large and will not fit, so if required a low-level alternative is required.
@@ -44,4 +47,11 @@ Arduino to calibrate the PWM clock frequency.
 Each servo channel has a defined min and max PW value that is used to scale from the 0 - 255 message value to the servo limits, 
 and each servo may be inverted such that the min & max physical limits are reveresed.
 These min & max PW can be found using a simple test sketch that allows these limits to be found such that the servo is not driven 
-beyond its physical limits, or the required limits if a reduced physical range is required.
+beyond its physical limits, or the required limits if a reduced physical range is required. 
+The failsafe values are defined in the settings.h file.
+
+Digital channels also use the PCA9685 to generate, but are simply set to 0 (off) or 4096 (on).
+Note that channel 7 is used to reset the error status flags embedded in the ACK message and channel 6 is configured as default ON. 
+This can then be used as a failsafe output that is release if either the battery fails, the Rx timeout occurs for too long (failsafe mode) 
+or channel 6 is activated at the controller
+The failsafe values for all digital channels is defined in the settings.h file
