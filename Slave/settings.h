@@ -1,7 +1,7 @@
 //
 //
 //
-const String REV            = "vE";             // Slave software revision 
+const String REV            = "vF";             // Slave software revision 
 //
 // I2C bus addresses
 const uint8_t I2C_PWM_ADDR  = 0x40;             // <1000 000> PWM PCA9685 module
@@ -81,3 +81,8 @@ const int16_t SERVOMAX[MAX_ANA_CHAN]  = {512,512,512,512,512,512};
 const int8_t SERVOINV[MAX_ANA_CHAN]   = {0,1,0,0,0,0,};
 // the offset are the start positions for each servo pulse so the pulses for each servo are at a different time so no overlap
 const int16_t PWMOFF[MAX_ANA_CHAN]    = {0,512,1024,1536,2048,2560};
+
+// digital channels settings
+//
+const uint8_t swFailsafe    =0x01;                 // failsafe values 
+//

@@ -7,6 +7,8 @@
 // ***********************************************************************************************
 // Revisions:
 //  Date        rev.    who     what
+//  02/04/2021  vF      SJH     Invert digital output 6 so it is normally ON, but turns OFF when activated, this will give a controllable
+//                              failsafe output that will release when commanded or when the battery voltage fails.
 //  27/02/2021          SJH     Add delay before sending ACK
 //                              Add Rx Fail count before declaring FAILSAFE mode
 //                              Add display of RF channel number
@@ -96,8 +98,8 @@ uint32_t rxStart,rxFinish,txStart,txFinish;
 // declare 6 channels of servo position data, set to mid positiion as the default
 byte servoArr[MAX_ANA_CHAN] = {SERVO_MID,SERVO_MID,SERVO_MID,SERVO_MID,SERVO_MID,SERVO_MID};
 
-// byte used to store 8 x on/off channels, set to OFF as the default
-byte swByte =0b00000000;
+// byte used to store 8 x on/off channels, set to OFF as the default, except channel 6 that is used as a failasfe
+byte swByte =0b01000000;
 
 // byte use to store slave status
 byte statusByte = 0x00;
@@ -357,6 +359,80 @@ void loop() {
           pwm.setPWM(servoNum,pulseStart,pulseStop);
         }
 
+        // now set failsafe values for the digital channels
+        // bit 0
+        if (swFailsafe & 0x01){
+          // turn ON
+          pwm.setPWM(8,4096,0);                 // fully on
+        }
+        else {
+          // turn OFF
+          pwm.setPWM(8,0,4096);                 // fully off
+        }
+        // bit 1
+        if (swFailsafe & 0x02){
+          // turn ON
+          pwm.setPWM(9,4096,0);                 // fully on
+        }
+        else {
+          // turn OFF
+          pwm.setPWM(9,0,4096);                 // fully off
+        }
+        // bit 2
+        if (swFailsafe & 0x04){
+          // turn ON
+          pwm.setPWM(10,4096,0);                 // fully on
+        }
+        else {
+          // turn OFF
+          pwm.setPWM(10,0,4096);                 // fully off
+        }
+        // bit 3
+        if (swFailsafe & 0x08){
+          // turn ON
+          pwm.setPWM(11,4096,0);                 // fully on
+        }
+        else {
+          // turn OFF
+          pwm.setPWM(11,0,4096);                 // fully off
+        }
+        // bit 4
+        if (swFailsafe & 0x10){
+          // turn ON
+          pwm.setPWM(12,4096,0);                 // fully on
+        }
+        else {
+          // turn OFF
+          pwm.setPWM(12,0,4096);                 // fully off
+        }
+        // bit 5
+        if (swFailsafe & 0x20){
+          // turn ON
+          pwm.setPWM(13,4096,0);                 // fully on
+        }
+        else {
+          // turn OFF
+          pwm.setPWM(13,0,4096);                 // fully off
+        }
+        // bit 6
+        if (swFailsafe & 0x40){
+          // turn ON
+          pwm.setPWM(14,4096,0);                 // fully on
+        }
+        else {
+          // turn OFF
+          pwm.setPWM(14,0,4096);                 // fully off
+        }
+        // bit 7
+        if (swFailsafe & 0x80){
+          // turn ON
+          pwm.setPWM(15,4096,0);                 // fully on
+        }
+        else {
+          // turn OFF
+          pwm.setPWM(15,0,4096);                 // fully off
+        }
+
         //
         // set status error bit?
         //
@@ -597,10 +673,10 @@ void loop() {
       }
       // bit 6
       if (swByte & 0x40){
-        pwm.setPWM(14,4096,0);                 // fully on
+        pwm.setPWM(14,0,4096);                 // fully off
       }
       else {
-        pwm.setPWM(14,0,4096);                 // fully off
+        pwm.setPWM(14,4096,0);                 // fully on
       }
       // bit 7
       if (swByte & 0x80){
