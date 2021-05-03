@@ -7,6 +7,7 @@
 // ***********************************************************************************************
 // Revisions:
 //  Date        rev,    who     what
+//  26/04/2021  vG      SJH     Add a visual heartbeat indicator before the 'RF channel' text.
 //  13/03/2021  vF      SJH     Change to a 128x64 SH1106 OLED display
 //  27/02/2021          SJH     Add display of RF channel number
 //  26/02/2021  vE      SJH     Add code to drive OLED display & display RF parameters etc. on a scrolling display
@@ -123,6 +124,7 @@ byte msgArr[NUM_ANA_CHAN +2];
 bool txTimeout = false;                           // Tx timeout flag
 bool rxTimeout = false;                           // Rx timeout flag
 bool rxMsgOk = false;                             // received valid message flag
+bool heartbeat = false;                           // used to generate a visible heartbeat
 
 // variables for joystick inputs
 int16_t vmeas;
@@ -216,9 +218,7 @@ void setup() {
   hexSwitch = readHexSwitch();
   rfChannel = 2 * int(hexSwitch) + 3;
 
-//  oled.print("RF channel: ");
-//  oled.println(rfChannel);
-  sprintf(szTemp,"RF channel: %d", (int)rfChannel);
+  sprintf(szTemp," RF channel: %d", (int)rfChannel);
   oledWriteString(&oled,0,0,1,szTemp,FONT_SMALL,0,1);
   delay(2000);                                            // 2 sec delay
 
@@ -449,7 +449,17 @@ void loop() {
 //        oled.println("*** Rx timeout ***");
         sprintf(szTemp,"*** Rx timeout ***");
         oledWriteString(&oled,0,0,0,szTemp,FONT_NORMAL,0,1);
-        
+
+        // generate heartbeat
+        if (heartbeat == false){
+          sprintf(szTemp," ");
+          heartbeat = true;
+       } else {
+          sprintf(szTemp,"+");
+          heartbeat = false;                
+        }
+        oledWriteString(&oled,0,0,1,szTemp,FONT_SMALL,0,1);
+
         break;
       }
       //
@@ -527,6 +537,16 @@ void loop() {
 //          Serial.print(swByteA,HEX);
 //          Serial.print(F(" "));
 //          Serial.println(swByteB,HEX);
+
+            // generate heartbeat
+            if (heartbeat == false){
+              sprintf(szTemp," ");
+              heartbeat = true;
+           } else {
+              sprintf(szTemp,"+");
+              heartbeat = false;                
+            }
+            oledWriteString(&oled,0,0,1,szTemp,FONT_SMALL,0,1);
           
           // get various parameters of the received packet
           // 
@@ -551,7 +571,7 @@ void loop() {
 //              oled.println();
               oledWriteString(&oled,0,60,OLED_DATA,szTemp,FONT_SMALL,0,1);
 
-              // clear top line line
+              // clear top line line but include heartbeat
               sprintf(szTemp,"                         ");
               oledWriteString(&oled,0,0,0,szTemp,FONT_SMALL,0,1);
               
