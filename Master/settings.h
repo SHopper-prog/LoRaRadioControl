@@ -1,6 +1,6 @@
 //
 //
-const String REV            = "vG";             // Master software revision 
+const String REV            = "vH";             // Master software revision 
 const uint8_t REVLEN        = 3;                // s/w revision length, plus terminator
 //
 // I2C bus addresses
@@ -64,5 +64,7 @@ const int16_t RANGE               = 255;        // servo data is 0 to RANGE
 // channesl 5 & 6 are dummy data
 const int16_t vmax[MAX_ANA_CHAN]  = {1104,1100,1104,1099,1100,1100};
 const int16_t vmin[MAX_ANA_CHAN]  = {3,7,1,5,3,3};
-
 const int16_t SERVO_DEF           = 0x80;       // sero default mid-position
+//
+// digital channel characteristics
+//

@@ -7,6 +7,7 @@
 // ***********************************************************************************************
 // Revisions:
 //  Date        rev,    who     what
+//  08/05/2021  vH      SJH     Set the servo offset at initialisation such that the servo position = 0x80
 //  26/04/2021  vG      SJH     Add a visual heartbeat indicator before the 'RF channel' text.
 //  13/03/2021  vF      SJH     Change to a 128x64 SH1106 OLED display
 //  27/02/2021          SJH     Add display of RF channel number
@@ -152,6 +153,8 @@ void setup() {
   int rc;
   char szTemp[256];                               // OLED buffer
   char bytestr[1];
+  int16_t adc0;                                   // raw ADC value
+  float adc1;                                     // scaled value
 
   // define input pins and their pullups
   pinMode(HSW1,INPUT_PULLUP);                     // hex switch bit 1
@@ -294,8 +297,33 @@ void setup() {
   // set the function that will be called when packet transmission is finished
   radio.setDio0Action(setFlag);
 
-  // start transmitting the first packet
-//  Serial.print(F("[Master] Sending first packet ... "));
+  sprintf(szTemp,"setting up joysticks");
+  oledWriteString(&oled,0,0,0,szTemp,FONT_SMALL,0,1);
+
+  delay(100);                                       // delay for 100msec to allow ADC to cycle round
+
+  // find the current ADC values and calculate the offset so that the default value = 0x80
+  
+  for (int8_t n=0; n<4; n++)
+  {
+    //
+    // initiate a conversion, not the quickest, simplest.
+    // to shave a bit of time of set the ADC to continuous conversion then simply
+    // read the last value.
+    //
+    adc0 = ads1015.readADC_SingleEnded(n);              // read ADC value
+    adc1 = RANGE * (float(adc0)) / (float(vmax[n]) - float(vmin[n]));
+    //
+    // calculate the offset required to set the default value to 0x80
+    offset[n] = 0x80 - int(adc1);
+    Serial.print(F("[Master] joystick "));
+    Serial.print(n);
+    Serial.print(F("; ADC = "));
+    Serial.print(adc1);
+    Serial.print(F(", offset = "));
+    Serial.println(offset[n]);
+  }
+
 
   // set up message buffer and the default servo position array
   msgArr[0] = MSG_CMND;
@@ -305,13 +333,17 @@ void setup() {
   }
   msgArr[NUM_ANA_CHAN+1] = swByteA;
 
+
+//  oled.println("configured");
+  sprintf(szTemp,"configured          ");
+  oledWriteString(&oled,0,0,0,szTemp,FONT_SMALL,0,1);
+
+    // start transmitting the first packet
+//  Serial.print(F("[Master] Sending first packet ... "));
+
   txStart = micros();                                     // capture start time
   txTimeout = false;                                      // clear Tx timeout flag
 
-//  oled.println("configured");
-  sprintf(szTemp,"configured         ");
-  oledWriteString(&oled,0,0,0,szTemp,FONT_SMALL,0,1);
-  
   state = radio.startTransmit(msgArr, NUM_ANA_CHAN+2);    // start transmit mode
 }
 
@@ -752,6 +784,8 @@ void loop() {
       //
       //  scaled = RANGE * (Vmeas - Vmin) / (Vmax - Vmin) + offset
       //
+      //  scaled = RANGE * Vmeas / (Vmax - Vmin) + offset
+      //
       // where the Vmax & Vmin have been pre-measured using this sketch but with default values.
       // Vmin & Vmax can be noted down from the reported adc0 values as the joystick is physically
       // moved from one extreme to the other.
@@ -760,7 +794,8 @@ void loop() {
       // the offset is for future possible use with some kind of trim function, possibly using
       // another set of ADC & potentiometers.
       // 
-      adc1 = RANGE * (float(adc0) - float(vmin[n])) / (float(vmax[n]) - float(vmin[n])) + float(offset[n]);
+//      adc1 = RANGE * (float(adc0) - float(vmin[n])) / (float(vmax[n]) - float(vmin[n])) + float(offset[n]);
+      adc1 = RANGE * (float(adc0)) / (float(vmax[n]) - float(vmin[n])) + float(offset[n]);
       // clip the value to be between 0 and RANGE
       if (adc1 > RANGE)
       {
