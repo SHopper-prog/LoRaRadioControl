@@ -1,7 +1,7 @@
 //
 //
 //
-const String REV            = "vF";             // Slave software revision 
+const String REV            = "vG";             // Slave software revision 
 //
 // I2C bus addresses
 const uint8_t I2C_PWM_ADDR  = 0x40;             // <1000 000> PWM PCA9685 module
@@ -72,16 +72,25 @@ const float FREQ_SCALE      = 0.97;
 // The max and mnin values are determined from measurements on actual servos, and may be different for each servo type
 // They are the min and max values for the pulse width relative to the 4096 total count, assuming a 20msec frame
 // As a guide:
+// TowerPro SG90 digital servo, gives 180deg movement with values of
 //  120 = 0.58 msec
 //  512 = 2.5 msec
 //
-const int16_t SERVOMIN[MAX_ANA_CHAN]  = {120,120,120,120,120,120};
-const int16_t SERVOMAX[MAX_ANA_CHAN]  = {512,512,512,512,512,512};
+// Standard values for 90deg movement are:
+//  205 = 1.0009 msec
+//  409 = 1.997 msec
+//
+const int16_t SERVOMIN[MAX_ANA_CHAN]  = {205,205,205,205,205,205};
+const int16_t SERVOMAX[MAX_ANA_CHAN]  = {409,409,409,409,409,409};
 // the invert array is used to reverse the servo direction when set to 1
 const int8_t SERVOINV[MAX_ANA_CHAN]   = {0,1,0,0,0,0,};
 // the offset are the start positions for each servo pulse so the pulses for each servo are at a different time so no overlap
 const int16_t PWMOFF[MAX_ANA_CHAN]    = {0,512,1024,1536,2048,2560};
-
+//
+// the bias values are used to tweak the message values such that message value 0x80 is a true 'netural'
+// The value -10 is for the G2 Hydra15 ESC & motor
+const int16_t BIAS[MAX_ANA_CHAN]  = {-10,0,0,0,0,0};
+//
 // digital channels settings
 //
 const uint8_t swFailsafe    =0x01;                 // failsafe values 

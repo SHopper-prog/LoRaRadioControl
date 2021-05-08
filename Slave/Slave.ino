@@ -7,6 +7,8 @@
 // ***********************************************************************************************
 // Revisions:
 //  Date        rev.    who     what
+//  08/05/2021  vG      SJH     Reduce servo pulse range from 0.58msec-2.5msec to 1msec-2msec
+//                              Add a bias value to individual servo message to compensate for individual devices
 //  02/04/2021  vF      SJH     Invert digital output 6 so it is normally ON, but turns OFF when activated, this will give a controllable
 //                              failsafe output that will release when commanded or when the battery voltage fails.
 //  27/02/2021          SJH     Add delay before sending ACK
@@ -215,7 +217,7 @@ void setup() {
     pwm.setPWM(servoNum,pulseStart,pulseStop);
     // calculate the channel constants to save time later
     servoConst[servoNum] = (SERVOMAX[servoNum] - SERVOMIN[servoNum])/ float(SERVOMSGMAX + 1);
-    failSafe[servoNum] = 128;
+    failSafe[servoNum] = 128 + BIAS[servoNum];
   }
   Serial.println(F(" success!"));
   
@@ -585,7 +587,7 @@ void loop() {
         // valid servo message command so copy the servo message bytes from message to servo data array
         for (servoNum = 0; servoNum < NUM_ANA_CHAN; servoNum++)
         {
-          servoArr[servoNum] = msgArr[servoNum +1];
+          servoArr[servoNum] = msgArr[servoNum +1] + BIAS[servoNum];
         }
         //
         // copy on/off channel message here
