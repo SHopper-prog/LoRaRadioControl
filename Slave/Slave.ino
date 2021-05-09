@@ -7,6 +7,7 @@
 // ***********************************************************************************************
 // Revisions:
 //  Date        rev.    who     what
+//  09/05/2021          SJH     Correct addition of BIAS to the servo message value to maintain a range 0 to 255
 //  08/05/2021  vG      SJH     Reduce servo pulse range from 0.58msec-2.5msec to 1msec-2msec
 //                              Add a bias value to individual servo message to compensate for individual devices
 //  02/04/2021  vF      SJH     Invert digital output 6 so it is normally ON, but turns OFF when activated, this will give a controllable
@@ -587,7 +588,18 @@ void loop() {
         // valid servo message command so copy the servo message bytes from message to servo data array
         for (servoNum = 0; servoNum < NUM_ANA_CHAN; servoNum++)
         {
-          servoArr[servoNum] = msgArr[servoNum +1] + BIAS[servoNum];
+          // check for range 0 to 255
+          if (msgArr[servoNum +1] + BIAS[servoNum] > 255){
+            servoArr[servoNum] = 255;
+          }
+          else {
+            if (msgArr[servoNum +1] + BIAS[servoNum] < 0){
+              servoArr[servoNum] = 0;
+            }
+            else {
+              servoArr[servoNum] = msgArr[servoNum +1] + BIAS[servoNum];
+            }
+          }
         }
         //
         // copy on/off channel message here
