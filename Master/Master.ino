@@ -7,6 +7,7 @@
 // ***********************************************************************************************
 // Revisions:
 //  Date        rev,    who     what
+//  09/05/2021          SJH     Correct setting of servo trim offsets
 //  08/05/2021  vH      SJH     Set the servo offset at initialisation such that the servo position = 0x80
 //  26/04/2021  vG      SJH     Add a visual heartbeat indicator before the 'RF channel' text.
 //  13/03/2021  vF      SJH     Change to a 128x64 SH1106 OLED display
@@ -114,6 +115,7 @@ uint16_t servoArr[MAX_ANA_CHAN] = {SERVO_DEF,SERVO_DEF,SERVO_DEF,SERVO_DEF,SERVO
 // byte used to store 8 x on/off channels, set to OFF as the default
 byte swByteA =0b00000000;                         // bank A inputs
 byte swByteB =0b00000000;                         // bank B inputs
+byte bitmask =0b00000000;                         // mask to extract bank B bits
 
 // byte array used to store messages
 // this is formed from:
@@ -300,7 +302,7 @@ void setup() {
   sprintf(szTemp,"setting up joysticks");
   oledWriteString(&oled,0,0,0,szTemp,FONT_SMALL,0,1);
 
-  delay(100);                                       // delay for 100msec to allow ADC to cycle round
+  delay(1000);                                       // delay for 1 sec to allow ADC to cycle round & settle
 
   // find the current ADC values and calculate the offset so that the default value = 0x80
   
@@ -520,49 +522,40 @@ void loop() {
           // e.g. check for a trim inputs being '1' and increment/decrement the servo offset data.
 
           digitalWrite(LED1,LOW);                       // set LED OFF
-        
-          // joystick channel 0 trim
-          // bit 0 increments, bit 1 decrements, if both set then no change
-          if (swByteB & 0x01){
-            // bit set
-            offset[0] = offset[0] +1;
-            digitalWrite(LED1,HIGH);                   // set LED ON
-//            Serial.println(F("Joystick 0 offset incremented"));
-//            oled.println("joystick 0 incremented");
-            sprintf(szTemp,"Joystick 0 incremented");
-            oledWriteString(&oled,0,0,0,szTemp,FONT_SMALL,0,1);
-          }
-          if (swByteB & 0x02){
-            // bit set
-            offset[0] = offset[0] -1;
-            digitalWrite(LED1,HIGH);                   // set LED ON
-//            Serial.println(F("Joystick 0 offset decremented"));
-//            oled.println("joystick 0 decremented");
-            sprintf(szTemp,"Joystick 0 decremented");
-            oledWriteString(&oled,0,0,0,szTemp,FONT_SMALL,0,1);
-          }
 
-          // joystick channel 1 trim
-          // bit 2 increments, bit 3 decrements, if both set then no change
-          if (swByteB & 0x04){
-            // bit set
-            offset[1] = offset[1] +1;
-            digitalWrite(LED1,HIGH);                   // set LED ON
-//            Serial.println(F("Joystick 1 offset incremented"));
-//            oled.println("joystick 1 incremented");
-            sprintf(szTemp,"Joystick 1 incremented");
-            oledWriteString(&oled,0,0,0,szTemp,FONT_SMALL,0,1);
+          bitmask = 0b00000001;
+          for (int8_t n =0; n < NUM_ANA_CHAN; n++){
+            // joystick channel n trim
+            // bit 0 increments, bit 1 decrements, if both set then no change
+            if (swByteB & bitmask){
+              // increment bit set
+//              Serial.print(F("joystick "));
+//              Serial.print(n);
+//              Serial.print(F(" offset incremented "));
+//              Serial.println(offset[n]);
+              if (offset[n] < 32){
+                offset[n] = offset[n] +1;
+                digitalWrite(LED1,HIGH);                   // set LED ON
+                sprintf(szTemp,"Joystick incremented");
+                oledWriteString(&oled,0,0,0,szTemp,FONT_SMALL,0,1);
+              }
+            }
+            bitmask = bitmask << 1;
+            if (swByteB & bitmask){
+              // decrement bit set
+//              Serial.print(F("joystick "));
+//              Serial.print(n);
+//              Serial.print(F(" offset decremented "));
+//              Serial.println(offset[n]);
+              if (offset[n] > -32){
+                offset[n] = offset[n] -1;
+                digitalWrite(LED1,HIGH);                   // set LED ON
+                sprintf(szTemp,"Joystick decremented");
+                oledWriteString(&oled,0,0,0,szTemp,FONT_SMALL,0,1);
+              }
+            }
+            bitmask = bitmask << 1;
           }
-          if (swByteB & 0x08){
-            // bit set
-            offset[1] = offset[1] -1;
-            digitalWrite(LED1,HIGH);                   // set LED ON
-//            Serial.println(F("Joystick 1 offset decremented"));
-//            oled.println("joystick 1 decremented");
-            sprintf(szTemp,"Joystick 1 decremented");
-            oledWriteString(&oled,0,0,0,szTemp,FONT_SMALL,0,1);
-          }
-
 
           // display digital inputs
 //          Serial.print(F("Digital inputs: "));
