@@ -1,6 +1,6 @@
 //
 //
-const String REV            = "vH";             // Master software revision 
+const String REV            = "vJ";             // Master software revision 
 const uint8_t REVLEN        = 3;                // s/w revision length, plus terminator
 //
 // I2C bus addresses

@@ -7,6 +7,7 @@
 // ***********************************************************************************************
 // Revisions:
 //  Date        rev,    who     what
+//  10/06/2021  vJ      SJH     Add 'beep' on Rx timeout error and on initial configuration.
 //  09/05/2021          SJH     Correct setting of servo trim offsets
 //  08/05/2021  vH      SJH     Set the servo offset at initialisation such that the servo position = 0x80
 //  26/04/2021  vG      SJH     Add a visual heartbeat indicator before the 'RF channel' text.
@@ -93,6 +94,8 @@ uint8_t HSW2 = A3;      // hex switch bit 2
 uint8_t HSW4 = A2;      // hex switch bit 4
 uint8_t HSW8 = A1;      // hex switch bit 8
 
+uint8_t SERVO_CAL = 2;  // PCA9685 PWM clock calibratiion channel
+
 uint8_t hexSwitch;         // hex switch value read
 
 // RF channel number, but this should be overwritten later by the switch value
@@ -163,6 +166,9 @@ void setup() {
   pinMode(HSW2,INPUT_PULLUP);                     // hex switch bit 2
   pinMode(HSW4,INPUT_PULLUP);                     // hex switch bit 4
   pinMode(HSW8,INPUT_PULLUP);                     // hex switch bit 8
+
+  // define output pins
+  pinMode(SERVO_CAL,OUTPUT);                      // used to generate 'beep'
   
   Serial.begin(115200);
 
@@ -195,7 +201,8 @@ void setup() {
   strcat(szTemp, bytestr);
   strcat(szTemp,"        ");
   oledWriteString(&oled,0,0,0,szTemp, FONT_SMALL, 0, 1);
-  
+
+  beep(1000);                                              // 250 msec beep
   delay(2000);                                            // 2 sec delay
 
   // set up fixed display text
@@ -484,6 +491,9 @@ void loop() {
         sprintf(szTemp,"*** Rx timeout ***");
         oledWriteString(&oled,0,0,0,szTemp,FONT_NORMAL,0,1);
 
+        // generate beep
+        beep(100);
+        
         // generate heartbeat
         if (heartbeat == false){
           sprintf(szTemp," ");
@@ -878,4 +888,19 @@ void byte2str(char* buff, uint8_t val) {  // convert an 8-bit byte to a string o
 char nibble2hex(uint8_t nibble) {  // convert a 4-bit nibble to a hexadecimal character
   nibble &= 0xF;
   return nibble > 9 ? nibble - 10 + 'A' : nibble + '0';
+}
+
+// genertate a 1kHz 'beep' for given number of msec
+void beep(uint16_t beeptime) {
+  digitalWrite(LED1,HIGH);
+  for (int16_t n=0; n< beeptime; n++)
+  {
+    delayMicroseconds(500);             // 500us
+    //delay(1);
+    digitalWrite(SERVO_CAL,HIGH);
+    delayMicroseconds(500);             // 500us
+    //delay(1);
+    digitalWrite(SERVO_CAL,LOW);
+  }
+  digitalWrite(LED1,LOW);
 }
